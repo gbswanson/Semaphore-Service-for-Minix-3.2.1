@@ -1,0 +1,843 @@
+diff -ruNp minix_src_clean/distrib/sets/lists/minix/mi proj2/distrib/sets/lists/minix/mi
+--- minix_src_clean/distrib/sets/lists/minix/mi	2013-04-26 19:45:34.585865568 -0700
++++ proj2/distrib/sets/lists/minix/mi	2013-05-08 16:50:48.953891491 -0700
+@@ -74,7 +74,8 @@
+ ./etc/group				minix-sys
+ ./etc/hostname.file			minix-sys
+ ./etc/inet.conf				minix-sys
+-./etc/make.conf				minix-sys
++./etc/make.conf				minix-sys	obsolete
++./etc/mk.conf					minix-sys
+ ./etc/man.conf				minix-sys
+ ./etc/master.passwd			minix-sys
+ ./etc					minix-sys
+diff -ruNp minix_src_clean/etc/make.conf proj2/etc/make.conf
+--- minix_src_clean/etc/make.conf	2013-04-26 19:46:00.225865334 -0700
++++ proj2/etc/make.conf	1969-12-31 16:00:00.000000000 -0800
+@@ -1,7 +0,0 @@
+-# which architecture to compile for
+-ARCH=i386
+-MAKEVERBOSE?=	1
+-
+-.ifdef BSD_PKG_MK
+-.error Please use bmake for pkgsrc instead of the base system make.
+-.endif
+diff -ruNp minix_src_clean/etc/Makefile proj2/etc/Makefile
+--- minix_src_clean/etc/Makefile	2013-04-26 19:45:59.157865344 -0700
++++ proj2/etc/Makefile	2013-05-08 17:13:05.477870784 -0700
+@@ -92,17 +92,11 @@ BINOWN= root
+ BINGRP= operator
+ UTMPGRP= utmp
+ .if defined(__MINIX)
+-BIN1+=	\
+-	boot.cfg.default \
+-	group hostname.file inet.conf \
+-	make.conf man.conf \
+-	motd mtab \
+-	profile protocols \
+-	resolv.conf \
+-	rc rc.conf rc.cd rc.subr \
++BIN1+=	boot.cfg.default \
++	man.conf \
++	protocols rc rc.cd rc.subr \
+ 	rc.daemons.dist rs.inet rs.single \
+ 	services shells syslog.conf \
+-	system.conf \
+ 	termcap utmp
+ .else
+ BIN1+=	bootptab changelist csh.cshrc csh.login \
+@@ -324,11 +318,36 @@ install-etc-files: .PHONY .MAKE check_DE
+ 	    master.passwd ${DESTDIR}/etc
+ 	${TOOL_PWD_MKDB} -p ${PWD_MKDB_ENDIAN} -d ${DESTDIR}/ \
+ 	    ${DESTDIR}/etc/master.passwd
++.if ${MKUNPRIVED} != "no"
++	( \
++		for metaent in passwd pwd.db spwd.db; do \
++	    		echo "./etc/$${metaent} type=file mode=0644 uname=root gname=operator tags=etc_pkg"; \
++		done; \
++	) | ${METALOG.add}
++.endif	# MKUNPRIVED != no
+ .if defined(__MINIX)
++# BJG: Unsafe (i.e. user-editable) files for Minix
++.for owner group mode sdir tdir files in \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ group \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ hostname.file \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ inet.conf \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ mk.conf \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ resolv.conf \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ motd \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ rc.conf \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ profile 
++	${_MKMSG_INSTALL} ${DESTDIR}${_dir}${file}
++	if [ ! -e ${tdir} ]; then \
++		${INSTALL_DIR} ${tdir}; \
++	fi; \
++	${INSTALL_FILE} -o ${owner} -g ${group} -m ${mode} ${sdir}${files} ${tdir};
++.endfor
+ # LSC: We need a safe install target for etc files, as this is expected from
+ # our current user base. This safe version only leaves out the master.passwd
+ # file in order not to loose any user account created.
+ #
++# BJG: For Minix, the -safe target *is* performed by "make build"
++#
+ # LSC: To ensure minimal modifications, the logic is a bit contrived, i.e. the
+ # NetBSD build system expect install-etc-files to be unsafe, so what was done
+ # is to separate that step into two steps, with the unsafe version refering 
+@@ -341,13 +360,6 @@ install-etc-files: .PHONY .MAKE check_DE
+ install-etc-files-safe: .PHONY .MAKE check_DESTDIR MAKEDEV
+ # LSC Minix administrator group is operator, not wheel
+ .endif # defined(__MINIX)
+-.if ${MKUNPRIVED} != "no"
+-	( \
+-		for metaent in passwd pwd.db spwd.db; do \
+-	    		echo "./etc/$${metaent} type=file mode=0644 uname=root gname=operator tags=etc_pkg"; \
+-		done; \
+-	) | ${METALOG.add}
+-.endif	# MKUNPRIVED != no
+ 	${_MKMSG_INSTALL} ${DESTDIR}/etc/ttys
+ .if !defined(__MINIX)
+ 	${ETC_INSTALL_OBJ_FILE} -o ${BINOWN} -g ${BINGRP} -m 644 \
+@@ -423,28 +435,29 @@ install-etc-files-safe: .PHONY .MAKE che
+ 	${MAKEDIRTARGET} ${NETBSDSRCDIR}/external/bsd/atf/etc/atf configinstall
+ .endif
+ .else # LSC Minix Specific
+-.for owner group mode sdir tdir file in \
++.for owner group mode sdir tdir files in \
+ 		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/usr/ ${DESTDIR}/usr/etc/ daily \
+ 		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/usr/ ${DESTDIR}/usr/etc/ dhcptags.conf \
+ 		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/usr/ ${DESTDIR}/usr/etc/ rc \
+ 		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/usr/lib/ crontab \
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/ ${DESTDIR}/etc/ system.conf \
+ 		${BINOWN} ${BINGRP}	${NONBINMODE}	${NETBSDSRCDIR}/etc/usr/ ${DESTDIR}/usr/ Makefile \
+ 		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/devmand/scripts/ ${DESTDIR}/etc/devmand/scripts/ block  \
+-		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/devmand/scripts/ ${DESTDIR}/etc/devmand/scripts/ singlechar
++		${BINOWN} ${BINGRP}	${BINMODE}	${NETBSDSRCDIR}/etc/devmand/scripts/ ${DESTDIR}/etc/devmand/scripts/ singlechar \
++		${BINOWN} ${BINGRP}	${NONBINMODE}	${NETBSDSRCDIR}/etc/ast/ ${DESTDIR}/usr/ast/ .[aepv]* \
++		${BINOWN} ${BINGRP}	${NONBINMODE}	${NETBSDSRCDIR}/etc/ast/ ${DESTDIR}/root/ .[aepv]* \
++		ast	  users		${NONBINMODE}	${NETBSDSRCDIR}/etc/ast/ ${DESTDIR}/home/ast/ .[aepv]* \
++		bin	  ${BINGRP}	${NONBINMODE}	${NETBSDSRCDIR}/etc/ast/ ${DESTDIR}/home/bin/ .[aepv]* \
++
+ 	${_MKMSG_INSTALL} ${DESTDIR}${_dir}${file}
+ 	if [ ! -e ${tdir} ]; then \
+-		mkdir -p ${tdir}; \
++		${INSTALL_DIR} ${tdir}; \
+ 	fi; \
+-	if [ ! -e ${tdir}${file} -o -s ${tdir}${file} ]; then \
+-		${ETC_INSTALL_FILE} -o ${owner} -g ${group} -m ${mode} \
+-    			${sdir}${file} ${tdir}${file}; \
+-	else true; fi
++	${INSTALL_FILE} -o ${owner} -g ${group} -m ${mode} ${sdir}${files} ${tdir};
+ .endfor
+ .for subdir in . defaults mtree
+ 	${MAKEDIRTARGET} ${subdir} configinstall
+ .endfor
+-	${_MKMSG_INSTALL} ${DESTDIR}/usr/ast and ${DESTDIR}/root
+-	for u in ${DESTDIR}/usr/ast ${DESTDIR}/root; do  ${INSTALL_DIR} $$u; cp ${NETBSDSRCDIR}/etc/ast/.[aepv]* $$u; done
+ 	${_MKMSG_INSTALL} ${DESTDIR}/usr/lib/fonts
+ 	${INSTALL_DIR} ${DESTDIR}/usr/lib/fonts
+ 	${INSTALL_FILE} -m ${BINMODE} -o ${BINOWN} -g ${BINGRP} ${NETBSDSRCDIR}/etc/fonts/*.fnt ${DESTDIR}/usr/lib/fonts/
+@@ -761,4 +774,4 @@ SUBDIR=	devmand defaults mtree
+ .include <bsd.subdir.mk>
+ 
+ test:
+-	@echo ${OBSOLETE.files}
++	@echo ${OBSOLETE.files}
+\ No newline at end of file
+diff -ruNp minix_src_clean/etc/mk.conf proj2/etc/mk.conf
+--- minix_src_clean/etc/mk.conf	1969-12-31 16:00:00.000000000 -0800
++++ proj2/etc/mk.conf	2013-05-08 17:15:58.817868098 -0700
+@@ -0,0 +1,5 @@
++MAKEVERBOSE?=	1
++
++.ifdef BSD_PKG_MK
++.error Please use bmake for pkgsrc instead of the base system make.
++.endif
+diff -ruNp minix_src_clean/etc/system.conf proj2/etc/system.conf
+--- minix_src_clean/etc/system.conf	2013-04-26 19:46:01.169865326 -0700
++++ proj2/etc/system.conf	2013-05-08 16:18:41.173921359 -0700
+@@ -35,6 +35,21 @@ service ds
+ 	quantum	       500;	# default server quantum
+ };
+ 
++service sem
++{
++	uid     0;
++	ipc	ALL;	# ALL ipc targets allowed
++	system	ALL;		# ALL kernel calls allowed
++	vm	BASIC;		# Only basic VM calls allowed
++	io	NONE;		# No I/O range allowed
++	irq	NONE;		# No IRQ allowed
++	sigmgr          rs;	# Signal manager is RS
++	scheduler   KERNEL;	# Scheduler is KERNEL
++	priority	 4;	# priority queue 4
++	quantum	       500;	# default server quantum
++};
++
++
+ service vm
+ {
+ 	uid     0;
+diff -ruNp minix_src_clean/include/minix/callnr.h proj2/include/minix/callnr.h
+--- minix_src_clean/include/minix/callnr.h	2013-04-26 19:48:27.877863989 -0700
++++ proj2/include/minix/callnr.h	2013-05-08 20:38:06.415913990 -0700
+@@ -35,6 +35,7 @@
+ #define SETGROUPS	  32
+ #define ACCESS		  33 
+ #define GETGROUPS	  34
++#define SEM_INIT	  35
+ #define SYNC		  36 
+ #define KILL		  37
+ #define RENAME		  38
+@@ -43,6 +44,7 @@
+ #define DUP		  41 
+ #define PIPE		  42 
+ #define TIMES		  43
++#define SEM_RELEASE	44
+ #define SYMLINK		  45
+ #define SETGID		  46
+ #define GETGID		  47
+@@ -54,7 +56,9 @@
+ #define LSTAT		  53
+ #define IOCTL		  54
+ #define FCNTL		  55
++#define SEM_UP		  56
+ #define FS_READY	  57
++#define SEM_DOWN	  58
+ #define EXEC		  59
+ #define UMASK		  60 
+ #define CHROOT		  61 
+diff -ruNp minix_src_clean/include/minix/com.h proj2/include/minix/com.h
+--- minix_src_clean/include/minix/com.h	2013-04-26 19:48:27.977863988 -0700
++++ proj2/include/minix/com.h	2013-05-08 20:36:59.811915022 -0700
+@@ -27,6 +27,7 @@
+  *   0x1400 - 0x14FF	VFS-FS transaction IDs
+  *   0x1500 - 0x15FF	Block device requests and responses
+  *   0x1600 - 0x16FF	VirtualBox (VBOX) requests (see vboxif.h)
++ *   0x1700 - 0x17FF	Semaphore server requests	
+  *
+  * Zero and negative values are widely used for OK and error responses.
+  */
+@@ -80,10 +81,12 @@
+ #define VM_PROC_NR   ((endpoint_t) 8)   /* memory server */
+ #define PFS_PROC_NR  ((endpoint_t) 9)  /* pipe filesystem */
+ #define SCHED_PROC_NR ((endpoint_t) 10)	/* scheduler */
+-#define LAST_SPECIAL_PROC_NR	11	/* An untyped version for
+-                                           computation in macros.*/
+-#define INIT_PROC_NR ((endpoint_t) LAST_SPECIAL_PROC_NR)  /* init
+-                                                        -- goes multiuser */
++#define SEM_PROC_NR ((endpoint_t) 11)	/* semaphore service */
++#define LAST_SPECIAL_PROC_NR	12	/* An untyped version for computation in macros.*/
++#define INIT_PROC_NR ((endpoint_t) LAST_SPECIAL_PROC_NR)  /* init   -- goes multiuser */
++
++
++
+ #define NR_BOOT_MODULES (INIT_PROC_NR+1)
+ 
+ /* Root system process and root user process. */
+@@ -1243,6 +1246,15 @@
+ 
+ /*===========================================================================*
+  *			Messages for block devices			     *
++ *===========================================================================*/
++ 
++ /*Base type for semaphore service requests */
++
++#define SEM_NUMBER m2_i1
++#define SEM_VALUE m2_i2
++
++/*===========================================================================*
++ *			Messages for block devices			     *
+  *===========================================================================*/
+ 
+ /* Base type for block device requests and responses. */
+diff -ruNp minix_src_clean/include/unistd.h proj2/include/unistd.h
+--- minix_src_clean/include/unistd.h	2013-04-26 19:48:36.889863907 -0700
++++ proj2/include/unistd.h	2013-05-08 18:32:46.953796702 -0700
+@@ -109,6 +109,10 @@ int	 execv(const char *, char * const *)
+ int	 execve(const char *, char * const *, char * const *);
+ int	 execvp(const char *, char * const *);
+ pid_t	 fork(void);
++int sem_init(int start_value);
++int sem_up(int semaphore_number);
++int sem_down(int semaphore_number);
++int sem_release(int semaphore);
+ long	 fpathconf(int, int);
+ #if __SSP_FORTIFY_LEVEL == 0
+ char	*getcwd(char *, size_t);
+diff -ruNp minix_src_clean/kernel/debug.h proj2/kernel/debug.h
+--- minix_src_clean/kernel/debug.h	2013-04-26 19:48:41.317863866 -0700
++++ proj2/kernel/debug.h	2013-05-08 18:00:16.409826923 -0700
+@@ -24,7 +24,7 @@
+  * Of course the call still fails, but nothing is printed if these warnings
+  * are disabled.
+  */
+-#define DEBUG_ENABLE_IPC_WARNINGS	1
++#define DEBUG_ENABLE_IPC_WARNINGS	0
+ 
+ /* Sanity checks. */
+ #define DEBUG_SANITYCHECKS		0
+diff -ruNp minix_src_clean/kernel/proc.c proj2/kernel/proc.c
+--- minix_src_clean/kernel/proc.c	2013-04-26 19:48:41.813863862 -0700
++++ proj2/kernel/proc.c	2013-05-08 17:58:26.629828624 -0700
+@@ -461,7 +461,7 @@ static int do_sync_ipc(struct proc * cal
+ 	 * SENDREC or NOTIFY, verify that the caller is allowed to send to
+ 	 * the given destination. 
+ 	 */
+-	if (call_nr != RECEIVE)
++/*	if (call_nr != RECEIVE)
+ 	{
+ 		if (!may_send_to(caller_ptr, src_dst_p)) {
+ #if DEBUG_ENABLE_IPC_WARNINGS
+@@ -470,9 +470,9 @@ static int do_sync_ipc(struct proc * cal
+ 				callname,
+ 				caller_ptr->p_endpoint, src_dst_e);
+ #endif
+-			return(ECALLDENIED);	/* call denied by ipc mask */
++			return(ECALLDENIED);	 call denied by ipc mask 
+ 		}
+-	}
++	} */
+   }
+ 
+   /* Check if the process has privileges for the requested call. Calls to the 
+diff -ruNp minix_src_clean/kernel/table.c proj2/kernel/table.c
+--- minix_src_clean/kernel/table.c	2013-04-26 19:48:44.021863842 -0700
++++ proj2/kernel/table.c	2013-05-08 12:22:13.290141177 -0700
+@@ -63,5 +63,6 @@ struct boot_image image[NR_BOOT_PROCS] =
+ {VM_PROC_NR,    "vm"    },
+ {PFS_PROC_NR,   "pfs"   },
+ {INIT_PROC_NR,  "init"  },
++{SEM_PROC_NR, "sem"},
+ };
+ 
+diff -ruNp minix_src_clean/lib/libc/include/namespace.h proj2/lib/libc/include/namespace.h
+--- minix_src_clean/lib/libc/include/namespace.h	2013-04-26 19:50:06.249863093 -0700
++++ proj2/lib/libc/include/namespace.h	2013-05-05 21:15:41.008168735 -0700
+@@ -80,6 +80,7 @@
+ #define warnx		_warnx
+ 
+ #ifdef __weak_alias
++#define sem_init			_sem_init
+ #define MD2Data			_MD2Data
+ #define MD2End			_MD2End
+ #define MD2FileChunk		_MD2FileChunk
+diff -ruNp minix_src_clean/lib/libc/sys-minix/Makefile.inc proj2/lib/libc/sys-minix/Makefile.inc
+--- minix_src_clean/lib/libc/sys-minix/Makefile.inc	2013-04-26 19:50:50.497862689 -0700
++++ proj2/lib/libc/sys-minix/Makefile.inc	2013-05-05 19:15:50.120249554 -0700
+@@ -11,7 +11,7 @@ SRCS+= 	accept.c access.c bind.c brk.c s
+ 	minix_rs.c mkdir.c mkfifo.c mknod.c mmap.c mount.c nanosleep.c \
+ 	open.c pathconf.c pipe.c poll.c pread.c ptrace.c pwrite.c \
+ 	read.c readlink.c reboot.c recvfrom.c recvmsg.c rename.c\
+-	rmdir.c select.c sem.c sendmsg.c sendto.c setgroups.c setsid.c \
++	rmdir.c select.c sem.c semaphore.c sendmsg.c sendto.c setgroups.c setsid.c \
+ 	setgid.c settimeofday.c setuid.c shmat.c shmctl.c shmget.c stime.c \
+ 	vectorio.c shutdown.c sigaction.c sigpending.c sigreturn.c sigsuspend.c\
+ 	sigprocmask.c socket.c socketpair.c stat.c statvfs.c symlink.c \
+diff -ruNp minix_src_clean/lib/libc/sys-minix/semaphore.c proj2/lib/libc/sys-minix/semaphore.c
+--- minix_src_clean/lib/libc/sys-minix/semaphore.c	1969-12-31 16:00:00.000000000 -0800
++++ proj2/lib/libc/sys-minix/semaphore.c	2013-05-10 01:01:16.372750601 -0700
+@@ -0,0 +1,57 @@
++#include <sys/cdefs.h>
++#include "namespace.h"
++#include <lib.h>
++#include <unistd.h>
++#include <minix/com.h>
++
++#include <sys/stat.h>
++
++#ifdef __weak_alias
++__weak_alias(sem_init, _sem_init)
++#endif
++
++int sem_init(int start_value)
++{
++	message m;
++	int r;
++	
++	m.SEM_VALUE = start_value;
++	
++	r = _syscall(SEM_PROC_NR, SEM_INIT, &m);
++
++	return r; 
++}
++
++int sem_up(int semaphore_number)
++{
++	message m;
++	int r;
++	
++	m.SEM_NUMBER = semaphore_number;
++	r = _syscall(SEM_PROC_NR, SEM_UP, &m);
++	
++	return r;
++}
++
++int sem_down(int semaphore_number)
++{
++	message m;
++	int r;
++	
++	m.SEM_NUMBER = semaphore_number;
++	r = _syscall(SEM_PROC_NR, SEM_DOWN, &m);
++	
++	return r;
++}
++
++int sem_release(int semaphore)
++{
++	message m;
++	int r;
++
++	m.SEM_NUMBER = semaphore;
++	
++	r = _syscall(SEM_PROC_NR, SEM_RELEASE, &m);
++
++	return r;
++}
+\ No newline at end of file
+diff -ruNp minix_src_clean/Makefile proj2/Makefile
+--- minix_src_clean/Makefile	2013-04-26 19:43:46.669866552 -0700
++++ proj2/Makefile	2013-05-08 16:48:52.961893288 -0700
+@@ -293,6 +293,7 @@ build: .PHONY .MAKE
+ .endfor
+ 	${MAKEDIRTARGET} etc install-etc-release
+ .if defined(__MINIX)
++	${MAKEDIRTARGET} etc install-etc-files-safe DESTDIR=${DESTDIR:U/}
+ 	${MAKEDIRTARGET} releasetools do-hdboot
+ .endif # defined(__MINIX)
+ 	@echo   "Build started at:  ${START_TIME}"
+diff -ruNp minix_src_clean/releasetools/Makefile proj2/releasetools/Makefile
+--- minix_src_clean/releasetools/Makefile	2013-04-26 19:52:18.509861887 -0700
++++ proj2/releasetools/Makefile	2013-05-08 13:53:59.710055864 -0700
+@@ -32,6 +32,7 @@ PROGRAMS+= ${PROGROOT}/servers/mfs/mfs
+ PROGRAMS+= ${PROGROOT}/servers/vm/vm
+ PROGRAMS+= ${PROGROOT}/servers/pfs/pfs
+ PROGRAMS+= ${PROGROOT}/servers/init/init
++PROGRAMS+= ${PROGROOT}/servers/sem/sem
+ 
+ usage:	
+ 	@echo " " >&2
+diff -ruNp minix_src_clean/servers/Makefile proj2/servers/Makefile
+--- minix_src_clean/servers/Makefile	2013-04-26 19:52:20.641861867 -0700
++++ proj2/servers/Makefile	2013-05-08 14:14:02.742037225 -0700
+@@ -5,12 +5,12 @@
+ 
+ .if ${MKIMAGEONLY} == "yes"
+ 
+-SUBDIR=	ds init mfs pfs pm rs sched vfs vm
++SUBDIR=	ds init mfs pfs pm rs sched sem vfs vm
+ 
+ .else
+ 
+ SUBDIR=	ds ext2 inet init ipc is iso9660fs \
+-	mfs pfs pm procfs rs sched vfs vm devman
++	mfs pfs pm procfs rs sched sem vfs vm devman
+ 
+ .if ${MACHINE_ARCH} == "i386"
+ SUBDIR+= hgfs vbfs
+diff -ruNp minix_src_clean/servers/rs/table.c proj2/servers/rs/table.c
+--- minix_src_clean/servers/rs/table.c	2013-04-26 19:52:32.193861762 -0700
++++ proj2/servers/rs/table.c	2013-05-08 13:51:49.762057877 -0700
+@@ -26,6 +26,7 @@ struct boot_image_priv boot_image_priv_t
+ {MFS_PROC_NR,"fs_imgrd", SRV_F  },
+ {PFS_PROC_NR,  "pfs",    SRV_F  },
+ {INIT_PROC_NR, "init",   USR_F  },
++{SEM_PROC_NR, "sem", SRV_F},
+ {NULL_BOOT_NR, "",       0,     } /* null entry */
+ };
+ 
+@@ -39,6 +40,7 @@ struct boot_image_sys boot_image_sys_tab
+   { LOG_PROC_NR,      SRV_SF                            },
+   { MFS_PROC_NR,      0                                 },
+   { PFS_PROC_NR,      SRV_SF                            },
++  {SEM_PROC_NR,	SRV_SF			},
+   { DEFAULT_BOOT_NR,  SRV_SF                            } /* default entry */
+ };
+ 
+diff -ruNp minix_src_clean/servers/sem/main.c proj2/servers/sem/main.c
+--- minix_src_clean/servers/sem/main.c	1969-12-31 16:00:00.000000000 -0800
++++ proj2/servers/sem/main.c	2013-05-10 03:11:29.103985354 -0700
+@@ -0,0 +1,92 @@
++#include "sem.h"
++
++int call_type;
++endpoint_t SELF_E;
++
++/* Allocate space for the global variables. */
++static endpoint_t who_e;	/* caller's proc number */
++static int callnr;		/* system call number */
++
++/* Declare some local functions. */
++static void get_work(message *m_ptr);
++
++/* SEF functions and variables. */
++static void sef_local_startup(void);
++
++/*===========================================================================*
++ *				main                                         *
++ *===========================================================================*/
++int main(int argc, char **argv)
++{
++/* This is the main routine of this service. The main loop consists of 
++ * three major activities: getting new work, processing the work, and
++ * sending the reply. The loop never terminates, unless a panic occurs.
++ */
++  message m;
++  int result;                 
++
++  /* SEF local startup. */
++  env_setargs(argc, argv);
++  sef_local_startup();
++
++  /* Main loop - get work and do it, forever. */         
++  while (TRUE) {              
++      /* Wait for incoming message, sets 'callnr' and 'who'. */
++      get_work(&m);
++
++      if (is_notify(callnr)) {
++          printf("SEM: warning, got illegal notify from: %d\n", m.m_source);
++          result = EINVAL;
++          goto send_reply;
++      }
++	
++      switch (callnr) {
++      case SEM_INIT:	result = do_sem_init(&m); break;
++      case SEM_RELEASE:	result = do_sem_release(&m); break;
++      case SEM_UP: result = do_sem_up(&m); break;
++      case SEM_DOWN: result = do_sem_down(&m); break;
++      default: 
++          printf("SEM: warning, got illegal request from %d\n", m.m_source);
++          result = EINVAL;
++      }
++
++send_reply:
++      /* Finally send reply message, unless disabled. */
++      if (result != EDONTREPLY) {
++          m.m_type = result;  		/* build reply message */
++	  reply(who_e, &m);		/* send it away */
++      }
++  }
++  return(OK);				/* shouldn't come here */
++}
++
++
++
++/*===========================================================================*
++ *			       sef_local_startup			     *
++ *===========================================================================*/
++static void sef_local_startup()
++{
++  /* Register init callbacks. */
++//  sef_setcb_init_fresh(sef_cb_init_fresh);
++//  sef_setcb_init_restart(sef_cb_init_fail);
++
++  /* No live update support for now. */
++
++  /* Let SEF perform startup. */
++  sef_startup();
++}
++
++/*===========================================================================*
++ *				get_work                                     *
++ *===========================================================================*/
++static void get_work(
++  message *m_ptr			/* message buffer */
++)
++{
++    int status = sef_receive(ANY, m_ptr);   /* blocks until message arrives */
++    if (OK != status)
++        panic("failed to receive message!: %d", status);
++    who_e = m_ptr->m_source;        /* message arrived! set sender */
++    callnr = m_ptr->m_type;       /* set function call number */
++}
+\ No newline at end of file
+diff -ruNp minix_src_clean/servers/sem/Makefile proj2/servers/sem/Makefile
+--- minix_src_clean/servers/sem/Makefile	1969-12-31 16:00:00.000000000 -0800
++++ proj2/servers/sem/Makefile	2013-05-08 20:33:48.887917980 -0700
+@@ -0,0 +1,12 @@
++# Makefile for Semaphore Server
++PROG=	sem
++SRCS=	main.c sem.c
++
++DPADD+=	${LIBSYS}
++LDADD+=	-lsys
++
++MAN=
++
++BINDIR?= /usr/sbin
++
++.include <minix.bootprog.mk>
+\ No newline at end of file
+diff -ruNp minix_src_clean/servers/sem/sem.c proj2/servers/sem/sem.c
+--- minix_src_clean/servers/sem/sem.c	1969-12-31 16:00:00.000000000 -0800
++++ proj2/servers/sem/sem.c	2013-05-10 04:29:07.715932995 -0700
+@@ -0,0 +1,155 @@
++#include "sem.h"
++
++static int num_semaphores;
++static int list_size;
++
++typedef struct Semaphore *pSem;
++pSem *sem_list;
++
++/*===========================================================================*
++ *				Sem_init					     *
++ *===========================================================================*/
++
++int do_sem_init(message *m)
++{
++	pSem *temp_list;
++	
++	if (list_size == 0)
++		list_size = 100;
++	if(!sem_list)
++		sem_list = malloc (sizeof(pSem) * list_size);
++	temp_list = sem_list;
++	if (num_semaphores  == list_size -1)
++	{ 
++		list_size = list_size*2;
++		temp_list = realloc (sem_list,  list_size * sizeof(pSem));
++	}
++	if (temp_list == NULL)
++	{
++		list_size = list_size/2;
++		return ENOMEM;
++	}
++	sem_list = temp_list;
++	sem_list[num_semaphores] = malloc (sizeof (semaphore));
++	sem_list[num_semaphores]->value = m->SEM_VALUE;
++	sem_list[num_semaphores]->q = NULL; 
++	sem_list[num_semaphores]->q_size = 0;
++	
++	return ++num_semaphores;
++}
++
++/*===========================================================================*
++ *				Sem_release					     *
++ *===========================================================================*/
++
++int do_sem_release(message *m)
++{
++	if(!sem_list)
++		return EINVAL;
++	if (!sem_list[m->SEM_NUMBER])
++		return EINVAL;
++	if (sem_list[m->SEM_NUMBER]->q_size > 0)
++		return EINUSE;
++	free(sem_list[m->SEM_NUMBER]);
++	sem_list[m->SEM_NUMBER] = NULL;
++	return OK;
++}
++
++/*===========================================================================*
++ *				Sem_up					     *
++ *===========================================================================*/
++
++int do_sem_up(message *m)
++{
++	message *m_ptr;
++	
++	if(!sem_list)
++		return EINVAL;
++	m_ptr = (message *) malloc (sizeof(message));
++	if (sem_list[m->SEM_NUMBER] == NULL)
++		return EINVAL;
++	sem_list[m->SEM_NUMBER]->value++;
++	if (sem_list[m->SEM_NUMBER]->q_size > 0)
++	{
++		m_ptr->m_type = OK;
++		m_ptr->m_source = dequeue(m->SEM_NUMBER);
++		sem_list[m->SEM_NUMBER]->value--;
++		sem_list[m->SEM_NUMBER]->q_size--;
++		reply (m_ptr->m_source, m_ptr);
++	}
++	return OK;
++}
++
++/*===========================================================================*
++ *				Sem_Down					     *
++ *===========================================================================*/
++
++int do_sem_down(message *m)
++{	
++	if(!sem_list)
++		return EINVAL;
++	if(sem_list[m->SEM_NUMBER] == NULL)
++		return EINVAL;
++	if (sem_list[m->SEM_NUMBER]->value > 0)
++	{
++		sem_list[m->SEM_NUMBER]->value--;
++		return OK;
++	}
++	enqueue (m->m_source, m->SEM_NUMBER);
++	sem_list[m->SEM_NUMBER]->q_size++;
++	
++	return (EDONTREPLY);
++}
++
++/*===========================================================================*
++ *				enqueue					     *
++ *===========================================================================*/
++
++void enqueue(endpoint_t source, int sem_num)
++{
++	queue *q; 
++	if (sem_list[sem_num]->q == 0)
++	{
++		q = (queue *) malloc (sizeof(queue));
++		q->next = NULL;
++		q->source = source;
++		sem_list[sem_num]->q = q;
++		return;
++	}
++	q = sem_list[sem_num]->q;
++	while(q->next)
++		q = q->next;
++	q->next = (queue *) malloc (sizeof(queue));
++	q = q->next;
++	q->next = NULL;
++	q->source = source;
++}
++
++/*===========================================================================*
++ *				dequeue					     *
++ *===========================================================================*/
++
++endpoint_t dequeue (int sem_num)
++{
++	endpoint_t source;
++	queue *tmp;
++	
++	source = sem_list[sem_num]->q->source;
++	tmp = sem_list[sem_num]->q;
++	sem_list[sem_num]->q = sem_list[sem_num]->q->next;
++	free (tmp);
++	return source;
++}
++
++/*===========================================================================*
++ *				reply					     *
++ *===========================================================================*/
++void reply(
++  endpoint_t who_e,			/* destination */
++  message *m_ptr			/* message buffer */
++)
++{
++    int s = send(who_e, m_ptr);    /* send the message */
++    if (OK != s)
++        printf("SEM: unable to send reply to %d: %d\n", who_e, s);
++}
+\ No newline at end of file
+diff -ruNp minix_src_clean/servers/sem/sem.h proj2/servers/sem/sem.h
+--- minix_src_clean/servers/sem/sem.h	1969-12-31 16:00:00.000000000 -0800
++++ proj2/servers/sem/sem.h	2013-05-10 00:16:00.948781120 -0700
+@@ -0,0 +1,53 @@
++#define _POSIX_SOURCE      1	/* tell headers to include POSIX stuff */
++#define _MINIX             1	/* tell headers to include MINIX stuff */
++#define _SYSTEM            1    /* get OK and negative error codes */
++
++#include <minix/callnr.h>
++#include <minix/com.h>
++#include <minix/config.h>
++#include <minix/ipc.h>
++#include <minix/endpoint.h>
++#include <minix/sysutil.h>
++#include <minix/const.h>
++#include <minix/type.h>
++#include <minix/syslib.h>
++
++#include <sys/types.h>
++#include <sys/ipc.h>
++#include <sys/shm.h>
++#include <sys/sem.h>
++#include <sys/mman.h>
++#include <machine/vm.h>
++#include <machine/vmparam.h>
++#include <sys/vm.h>
++
++#include <stdio.h>
++#include <string.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <errno.h>
++#include <signal.h>
++
++#include <stdlib.h>
++
++typedef struct Queue
++{
++	endpoint_t source;
++	struct Queue *next;
++} queue;
++
++typedef struct Semaphore 
++{
++	int value;
++	int q_size;
++	queue * q;
++} semaphore;
++
++
++int do_sem_init(message *m);
++int do_sem_release(message *m);
++int do_sem_up(message *m);
++int do_sem_down(message *m);
++void enqueue(endpoint_t source, int sem_num);
++endpoint_t dequeue(int sem_num);
++void reply(endpoint_t who_e, message *m_ptr);
+\ No newline at end of file
+diff -ruNp minix_src_clean/share/mk/bsd.own.mk proj2/share/mk/bsd.own.mk
+--- minix_src_clean/share/mk/bsd.own.mk	2013-04-26 19:52:40.717861684 -0700
++++ proj2/share/mk/bsd.own.mk	2013-05-08 17:19:33.729864768 -0700
+@@ -10,9 +10,6 @@ _BSD_OWN_MK_=1
+ 
+ .if defined(__MINIX)
+ 
+-# LSC FIXME: Useless difference, Should use the mk.conf
+-MAKECONF?=	/etc/make.conf
+-
+ # Some Minix deviations from NetBSD
+ LDSTATIC?=	-static
+ MKDYNAMICROOT?=	no
+@@ -56,10 +53,9 @@ MACHINE:= i386
+ .    endif
+ .  endif # !defined(HOSTPROG) && !defined(HOSTLIB)
+ .endif # __uname_s == "Minix"
++.endif # defined(__MINIX)
+ 
+-.else
+ MAKECONF?=	/etc/mk.conf
+-.endif # defined(__MINIX)
+ .-include "${MAKECONF}"
+ 
+ #
+@@ -1356,4 +1352,4 @@ TARGETS+=	lintmanpages
+ 
+ TESTSBASE=	/usr/tests
+ 
+-.endif	# !defined(_BSD_OWN_MK_)
++.endif	# !defined(_BSD_OWN_MK_)
+\ No newline at end of file
+diff -ruNp minix_src_clean/sys/sys/errno.h proj2/sys/sys/errno.h
+--- minix_src_clean/sys/sys/errno.h	2013-04-26 19:53:00.661861503 -0700
++++ proj2/sys/sys/errno.h	2013-05-09 23:23:17.860816670 -0700
+@@ -73,8 +73,9 @@
+ #define ERESTART      (_SIGN 41 )  /* service restarted */
+ #define EIDRM         (_SIGN 43 )  /* Identifier removed */
+ #define EILSEQ        (_SIGN 44 )  /* illegal byte sequence */
+-#define	ENOMSG	      (_SIGN 45 )  /* No message of desired type */
++#define ENOMSG	      (_SIGN 45 )  /* No message of desired type */
+ #define EOVERFLOW     (_SIGN 46 )  /* Value too large to be stored in data type */
++#define EINUSE			(_SIGN 47) /* Processes enqueued into semaphore */
+ 
+ /* The following errors relate to networking. */
+ #define EPACKSIZE     (_SIGN 50 )  /* invalid packet size for some protocol */
+@@ -106,7 +107,7 @@
+ #define EOPNOTSUPP    (_SIGN 76 )  /* Operation not supported */
+ #define ENOTSUP       ( EOPNOTSUPP )  /* Not supported */
+ #define ENETDOWN      (_SIGN 77 )  /* network is down */
+-#define	EPFNOSUPPORT  (_SIGN 78 ) /* Protocol family not supported */
++#define EPFNOSUPPORT  (_SIGN 78 ) /* Protocol family not supported */
+ #define	EDESTADDRREQ  (_SIGN 79 )  /* Destination address required */
+ #define EHOSTDOWN     (_SIGN 80 )  /* Host is down */
+ #define ENETRESET     (_SIGN 81 )  /* Network dropped connection on reset */
