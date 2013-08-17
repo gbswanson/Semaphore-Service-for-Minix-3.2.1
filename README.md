@@ -1,6 +1,6 @@
 Semaphore-Service-for-Minix-3.2.1
 =================================
-This patch will create a new server that runs on boot allowing for a semaphore service to be integrated into programs.  Four system calls are added allowing for use of the semaphore server.
+This patch applied to a clean source tree of Minix-3.2.1 will create a new server that runs on boot allowing for a semaphore service to be integrated into programs.  Four system calls are added allowing for use of the semaphore server.
 
 int sem_init (int x) - creates a semaphore with x number of resources; returns the next available semaphore reference number
 
